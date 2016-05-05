@@ -13,13 +13,13 @@ module GithubInator
     end
 
     def execute_request(connection)
-      headers, body = connection.make_request(@method,
+      status, headers, body = connection.make_request(@method,
                                               @endpoint,
                                               @options,
                                               @data,
                                               @extra_headers)
 
-      @response = GithubInator::GithubResponse.new(headers, body)
+      @response = GithubInator::GithubResponse.new(status, headers, body)
       return @response
     end
   end

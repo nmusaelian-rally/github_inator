@@ -1,10 +1,10 @@
 module GithubInator
 
   class GithubResponse
-    attr_reader :header, :status, :body, :links
-    def initialize(headers, body)
+    attr_reader :headers, :status, :body, :links
+    def initialize(status, headers, body)
+      @status     = status
       @headers    = headers
-      @status     = headers['Status']
       @body       = JSON.parse(body)
       @links      = headers.has_key?("Link") ? headers["Link"] : nil
       if headers.has_key?("Link")

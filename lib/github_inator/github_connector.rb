@@ -12,7 +12,6 @@ module GithubInator
   class GithubConnector
     attr_reader :current_user, :connection, :request, :response
     def initialize(config)
-      puts "Current user #{config['user']}"
       @current_user = config['user']
       @connection = Inator::Connector.new(config)
     end

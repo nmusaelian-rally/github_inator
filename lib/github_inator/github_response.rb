@@ -24,7 +24,7 @@ module GithubInator
           links[pointer] = page
         end
       end
-      puts "LINK: #{links}" #e.g. when page-2, {"first"=>1, "next"=>3, "prev"=>1, "last"=>22}
+      #puts "LINK: #{links}" #e.g. when page-2, {"first"=>1, "next"=>3, "prev"=>1, "last"=>22}
       return links
     end
 

@@ -11,59 +11,77 @@ describe GithubInator do
   end
 
   describe "#make_request" do
-    context "check for links" do
+    # context "check for links" do
+    #   before :each do
+    #     organization = "RallyCommunity"
+    #     @repos_endpoint = ORG_REPOS_ENDPOINT.sub('<org_name>', organization)
+    #   end
+    #   it "response header includes links when there is more than one page of results" do
+    #     response = @connector.make_request(:get, @repos_endpoint)
+    #     expect(response).to be_an_instance_of GithubInator::GithubResponse
+    #     expect(response.status).to eql(200)
+    #     expect(response.links.has_key?("next")).to be true
+    #   end
+    #   it "response header includes next link equal 3 if page 2 is requested" do
+    #     page = {page: 2}
+    #     response = @connector.make_request(:get, @repos_endpoint, page)
+    #     expect(response.links["next"]).to eq(3)
+    #   end
+    #   it "response header includes prev link equal 2 if page 3 is requested" do
+    #     page = {'page': 3}
+    #     response = @connector.make_request(:get, @repos_endpoint, page)
+    #     expect(response.links["prev"]).to eq(2)
+    #   end
+    # end
+    # context "limit queries by time" do
+    #   before :each do
+    #     organization = "RallyCommunity"
+    #     repo = "open-closed-defects-chart"
+    #     replacements = {'<org_name>' => organization, '<repo_name>' => repo}
+    #     @repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+    #     puts @repo_commits_endpoint
+    #   end
+    #   it "limit results by date" do
+    #     since = {since: '2015-03-01'}
+    #     response = @connector.make_request(:get, @repo_commits_endpoint, since)
+    #     results = response.body
+    #     expect(results.length).to eql(2)
+    #   end
+    #   it "limit results by date and time" do
+    #     since =  {since: '2015-03-24T13:44:10Z'}
+    #     response = @connector.make_request(:get, @repo_commits_endpoint, since)
+    #     results = response.body
+    #     expect(results.length).to eql(1)
+    #   end
+    #   it "use two parameters" do
+    #     str1 = '2014-10-01T00:00:00Z'
+    #     str2 = '2015-03-04T00:00:00Z'
+    #     t1 = Time.parse(str1)
+    #     t2 = Time.parse(str2)
+    #     parameters =  {since: str1, until: str2}
+    #     response = @connector.make_request(:get, @repo_commits_endpoint, parameters)
+    #     results = response.body
+    #     expect(results.length).to eql(2)
+    #     expect(Time.parse(results.first["commit"]["author"]["date"])).to be_between(t1, t2)
+    #     expect(Time.parse(results.last["commit"]["author"]["date"])).to be_between(t1, t2)
+    #   end
+    # end
+    context "new paging" do
       before :each do
         organization = "RallyCommunity"
-        @repos_endpoint = ORG_REPOS_ENDPOINT.sub('<org_name>', organization)
-      end
-      it "response header includes links when there is more than one page of results" do
-        response = @connector.make_request(:get, @repos_endpoint)
-        expect(response).to be_an_instance_of GithubInator::GithubResponse
-        expect(response.status).to eql(200)
-        expect(response.links.has_key?("next")).to be true
-      end
-      it "response header includes next link equal 3 if page 2 is requested" do
-        page = {page: 2}
-        response = @connector.make_request(:get, @repos_endpoint, page)
-        expect(response.links["next"]).to eq(3)
-      end
-      it "response header includes prev link equal 2 if page 3 is requested" do
-        page = {'page': 3}
-        response = @connector.make_request(:get, @repos_endpoint, page)
-        expect(response.links["prev"]).to eq(2)
-      end
-    end
-    context "limit queries by time" do
-      before :each do
-        organization = "RallyCommunity"
-        repo = "open-closed-defects-chart"
+        repo = "rally-java-rest-apps"
         replacements = {'<org_name>' => organization, '<repo_name>' => repo}
         @repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
         puts @repo_commits_endpoint
       end
-      it "limit results by date" do
-        since = {since: '2015-03-01'}
-        response = @connector.make_request(:get, @repo_commits_endpoint, since)
-        results = response.body
-        expect(results.length).to eql(2)
-      end
-      it "limit results by date and time" do
-        since =  {since: '2015-03-24T13:44:10Z'}
-        response = @connector.make_request(:get, @repo_commits_endpoint, since)
-        results = response.body
-        expect(results.length).to eql(1)
-      end
-      it "use two parameters" do
-        str1 = '2014-10-01T00:00:00Z'
-        str2 = '2015-03-04T00:00:00Z'
-        t1 = Time.parse(str1)
-        t2 = Time.parse(str2)
-        parameters =  {since: str1, until: str2}
-        response = @connector.make_request(:get, @repo_commits_endpoint, parameters)
-        results = response.body
-        expect(results.length).to eql(2)
-        expect(Time.parse(results.first["commit"]["author"]["date"])).to be_between(t1, t2)
-        expect(Time.parse(results.last["commit"]["author"]["date"])).to be_between(t1, t2)
+      it "get urls" do
+        response1 = @connector.make_request(:get, @repo_commits_endpoint)
+        expect(response1.next).to be == "https://api.github.com/repositories/29268324/commits?page=2"
+        response2 = @connector.make_request(:get, response1.next)
+        expect(response2.next).to be == "https://api.github.com/repositories/29268324/commits?page=3"
+        response3 = @connector.make_request(:get, response2.next)
+        puts response3.body.length
+        expect(response3.next).to be_nil
       end
     end
   end

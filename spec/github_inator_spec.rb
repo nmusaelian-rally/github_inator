@@ -11,31 +11,29 @@ describe GithubInator do
   end
 
   describe "#make_request" do
-    context "pagination" do
+    context "check for links" do
       before :each do
         organization = "RallyCommunity"
         @repos_endpoint = ORG_REPOS_ENDPOINT.sub('<org_name>', organization)
       end
-      it "return links if there is more than one page of results" do
+      it "response header includes links when there is more than one page of results" do
         response = @connector.make_request(:get, @repos_endpoint)
         expect(response).to be_an_instance_of GithubInator::GithubResponse
         expect(response.status).to eql(200)
-        expect(response.links.length).to eql(2)
         expect(response.links.has_key?("next")).to be true
-        expect(response.links.has_key?("last")).to be true
       end
-      it "response includes next link equal 3 if page 2 is requested" do
+      it "response header includes next link equal 3 if page 2 is requested" do
         page = {page: 2}
         response = @connector.make_request(:get, @repos_endpoint, page)
         expect(response.links["next"]).to eq(3)
       end
-      it "response includes prev link equal 2 if page 3 is requested" do
+      it "response header includes prev link equal 2 if page 3 is requested" do
         page = {'page': 3}
         response = @connector.make_request(:get, @repos_endpoint, page)
         expect(response.links["prev"]).to eq(2)
       end
     end
-    context "time based queries" do
+    context "limit queries by time" do
       before :each do
         organization = "RallyCommunity"
         repo = "open-closed-defects-chart"

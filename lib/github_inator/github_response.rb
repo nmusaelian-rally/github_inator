@@ -12,19 +12,10 @@ module GithubInator
       else
         @next = nil
       end
-
     end
 
     def get_next(link)
-      pattern = /<.*>; rel="next"/
-      match_data = link.match(pattern)
-      puts "match_data: #{match_data.to_s}"
-      narrow_pattern = /<(.*)>/
-      url = match_data.to_s.match(narrow_pattern)
-
-      url = url.to_s
-      url = url[1..-2] #remove angle brackets
-      return url
+      link.split(', ').map {|e| e.split('; ')}.find {|e| e[1] == 'rel="next"'}[0][1..-2]
     end
  end
 end

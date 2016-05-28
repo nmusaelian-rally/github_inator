@@ -67,7 +67,6 @@ describe GithubInator do
         repo = "rally-java-rest-apps"
         replacements = {'<org_name>' => organization, '<repo_name>' => repo}
         @repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
-        puts @repo_commits_endpoint
       end
       it "get urls" do
         response1 = @connector.make_request(:get, @repo_commits_endpoint)
@@ -85,6 +84,20 @@ describe GithubInator do
         response2 = @connector.make_request(:get, response1.next)
         puts response2.body.length
         expect(response2.next).to be_nil
+      end
+      it "page while next is not null" do
+        total_results = []
+        total_results_count = 0
+        response = @connector.make_request(:get, @repo_commits_endpoint)
+        total_results << response.body
+        total_results_count += response.body.length
+        while response.next != nil do
+          response = @connector.make_request(:get, response.next)
+          total_results << response.body
+          total_results_count += response.body.length
+        end
+        expect(total_results_count).to be >= 87
+        expect(total_results.flatten.length).to be == total_results_count
       end
     end
   end

@@ -1,6 +1,5 @@
 require 'github_inator'
 require 'time'
-#require 'spec_helpers/connector_runner'
 
 ORG_REPOS_ENDPOINT = "orgs/<org_name>/repos"
 REPO_COMMITS_ENDPOINT = "repos/<org_name>/<repo_name>/commits"
@@ -13,13 +12,15 @@ USER_TEAMS_ENDPOINT = "user/teams"
 
 TEAM_REPOS_ENDPOINT = "teams/<id>/repos"
 
+SEARCH_REPOS_ENDPOINT = "search/repositories"
+
 
 def get_all_results(connector, method, endpoint, options={}, data=nil, extra_headers=nil)
   total_results = []
-  response = @connector.make_request(method, endpoint,options,data,extra_headers)
+  response = connector.make_request(method, endpoint,options,data,extra_headers)
   total_results << response.body
   while response.next != nil do
-    response = @connector.make_request(:get, response.next)
+    response = connector.make_request(:get, response.next)
     total_results << response.body
   end
   total_results
@@ -138,6 +139,47 @@ describe GithubInator do
         @organization = "RallySoftware"
         @org_teams_endpoint = ORGS_TEAMS_ENDPOINT.sub('<org_name>', @organization)
       end
+      it "search by when organization's repository was last pushed" do
+        lookback = 86400
+        now = Time.new.utc
+        back = (now - lookback).iso8601
+        criteria = "?q=user:#{@organization}+pushed:>#{back}"
+        search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
+        results = get_all_results(@connector, :get, search_endpoint).flatten
+        total_count = results[0]["total_count"]
+        items = results[0]["items"]
+        puts "total_count: #{total_count}, items.length: #{items.length}"
+        expect(total_count).to be >= 0
+        expect(items.length).to be <= total_count
+        if items.length > 0
+          owner = items[0]["owner"]["login"]
+          pushed_at = Time.parse(items[0]["pushed_at"])
+          expect(owner).to be == @organization
+          expect(pushed_at).to be >= Time.parse(back)
+        end
+      end
+      # search by team returns inconsistent results. When repos are filtered by "Connectoramos" team it returns 0 results with is incorrect
+      # it "search by when team's repository was last pushed" do
+      #   team = "Connectoramos"
+      #   #team = "Engineering"
+      #   lookback = 8640000
+      #   now = Time.new.utc
+      #   back = (now - lookback).iso8601
+      #   criteria = "?q=team:#{team}+pushed:>#{back}"
+      #   #criteria = "?q=team:#{team}"
+      #   search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
+      #   results = get_all_results(@connector, :get, search_endpoint).flatten
+      #   puts results
+      #   total_count = results[0]["total_count"]
+      #   items = results[0]["items"]
+      #   puts "total_count: #{total_count}, items.length: #{items.length}"
+      #   expect(total_count).to be >= 0
+      #   expect(items.length).to be <= total_count
+      #   if items.length > 0
+      #     pushed_at = Time.parse(items[0]["pushed_at"])
+      #     expect(pushed_at).to be >= Time.parse(back)
+      #   end
+      #end
       it "get organization's teams and user's teams" do
         teams = []
         user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
@@ -145,28 +187,29 @@ describe GithubInator do
         org_teams = get_all_results(@connector, :get, @org_teams_endpoint).flatten
         puts "There are #{org_teams.length} teams in #{@organization} organization"
         expect(user_teams.flatten.length).to be < org_teams.flatten.length
-        user_teams.each do |team|
-            teams << {name: team['name'], id: team['id'], organization: team['organization']['login']}
-        end
-        lookback = 600 #86400
-        now = Time.new.utc
-        back = now - lookback
-        since = {since: back.iso8601}
-        repositories_with_recent_commits = []
-        teams.each do |team|
-          puts "getting repos for team: #{team}"
-          team_repos_endpoint = TEAM_REPOS_ENDPOINT.sub('<id>', team[:id].to_s)
-          team_repos = get_all_results(@connector, :get, team_repos_endpoint).flatten
-          team_repos.each do |repo|
-            replacements = {'<org_name>' => repo['owner']['login'], '<repo_name>' => repo['name']}
-            repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
-            commits = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
-            if commits.length > 0
-              repositories_with_recent_commits << repo['name']
-              puts "found #{commits.length} commits in #{repo['name']} repo since #{since} "
-            end
-          end
-        end
+        # code below is inefficient. It it better to filter earlier in the process
+        # user_teams.each do |team|
+        #     teams << {name: team['name'], id: team['id'], organization: team['organization']['login']}
+        # end
+        # lookback = 600 #86400
+        # now = Time.new.utc
+        # back = now - lookback
+        # since = {since: back.iso8601}
+        # repositories_with_recent_commits = []
+        # teams.each do |team|
+        #   puts "getting repos for team: #{team}"
+        #   team_repos_endpoint = TEAM_REPOS_ENDPOINT.sub('<id>', team[:id].to_s)
+        #   team_repos = get_all_results(@connector, :get, team_repos_endpoint).flatten
+        #   team_repos.each do |repo|
+        #     replacements = {'<org_name>' => repo['owner']['login'], '<repo_name>' => repo['name']}
+        #     repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+        #     commits = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
+        #     if commits.length > 0
+        #       repositories_with_recent_commits << repo['name']
+        #       puts "found #{commits.length} commits in #{repo['name']} repo since #{since} "
+        #     end
+        #   end
+        # end
       end
     end
   end

@@ -137,10 +137,12 @@ describe GithubInator do
     context "teams, repos, commits" do
       before :each do
         @organization = "RallySoftware"
+        @user = "nmusaelian-rally"
         @org_teams_endpoint = ORGS_TEAMS_ENDPOINT.sub('<org_name>', @organization)
       end
       it "search by when organization's repository was last pushed" do
-        lookback = 86400
+        days = 1
+        lookback = days * 86400
         now = Time.new.utc
         back = (now - lookback).iso8601
         criteria = "?q=user:#{@organization}+pushed:>#{back}"
@@ -158,58 +160,59 @@ describe GithubInator do
           expect(pushed_at).to be >= Time.parse(back)
         end
       end
-      # search by team returns inconsistent results. When repos are filtered by "Connectoramos" team it returns 0 results with is incorrect
-      # it "search by when team's repository was last pushed" do
-      #   team = "Connectoramos"
-      #   #team = "Engineering"
-      #   lookback = 8640000
-      #   now = Time.new.utc
-      #   back = (now - lookback).iso8601
-      #   criteria = "?q=team:#{team}+pushed:>#{back}"
-      #   #criteria = "?q=team:#{team}"
-      #   search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
-      #   results = get_all_results(@connector, :get, search_endpoint).flatten
-      #   puts results
-      #   total_count = results[0]["total_count"]
-      #   items = results[0]["items"]
-      #   puts "total_count: #{total_count}, items.length: #{items.length}"
-      #   expect(total_count).to be >= 0
-      #   expect(items.length).to be <= total_count
-      #   if items.length > 0
-      #     pushed_at = Time.parse(items[0]["pushed_at"])
-      #     expect(pushed_at).to be >= Time.parse(back)
-      #   end
-      #end
+      it "get commits in a repository filtered by user/organization and pushed_at" do
+        repos_with_recent_commits = []
+        commits_data = []
+        days = 2
+        lookback = days * 86400
+        now = Time.new.utc
+        back = now - lookback
+        criteria = "?q=user:#{@organization}+pushed:>#{back.iso8601}"
+        search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
+        results = get_all_results(@connector, :get, search_endpoint).flatten
+        puts "number of pages #{results.length}"
+        total_count = results.first["total_count"]
+        if total_count
+          expect(total_count).to eq(results.last["total_count"])
+          expect(results.first["items"].length).to be >= results.last["items"].length
+          results.each do |page|
+            puts page["items"].length
+            page["items"].each do |result|
+              #puts "#{result['name']}....#{result['owner']["login"]}"
+              expect(result["owner"]["login"]).to eq(@organization)
+              expect(Time.parse(result["pushed_at"])).to be >= back
+              repos_with_recent_commits << {'name' => result["name"], 'org' => result["owner"]["login"]}
+            end
+          end
+        end
+        if !repos_with_recent_commits.empty?
+          since = {since: back.iso8601}
+          repos_with_recent_commits.each do |repo|
+            replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name']}
+            repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+            commit_results = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
+            #puts "found #{commits.length} commit(s) in #{repo['name']} repo since #{since} "
+            commit_results.each do |result|
+              commit = {
+                  'sha'     => result['sha'],
+                  'author'  => result['commit']['author']['name'],
+                  'message' => result['commit']['message']
+              }
+              commits_data << commit
+            end
+          end
+          commits_data.each do |commit|
+            puts "sha: #{commit['sha']}...author: #{commit['author']}...message: #{commit['message']}"
+            puts "-"*40
+          end
+        end
+      end
       it "get organization's teams and user's teams" do
-        teams = []
         user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
-        puts "I am a member of #{user_teams.length} teams"
+        puts "I am a member of #{user_teams.length} team(s)"
         org_teams = get_all_results(@connector, :get, @org_teams_endpoint).flatten
         puts "There are #{org_teams.length} teams in #{@organization} organization"
-        expect(user_teams.flatten.length).to be < org_teams.flatten.length
-        # code below is inefficient. It it better to filter earlier in the process
-        # user_teams.each do |team|
-        #     teams << {name: team['name'], id: team['id'], organization: team['organization']['login']}
-        # end
-        # lookback = 600 #86400
-        # now = Time.new.utc
-        # back = now - lookback
-        # since = {since: back.iso8601}
-        # repositories_with_recent_commits = []
-        # teams.each do |team|
-        #   puts "getting repos for team: #{team}"
-        #   team_repos_endpoint = TEAM_REPOS_ENDPOINT.sub('<id>', team[:id].to_s)
-        #   team_repos = get_all_results(@connector, :get, team_repos_endpoint).flatten
-        #   team_repos.each do |repo|
-        #     replacements = {'<org_name>' => repo['owner']['login'], '<repo_name>' => repo['name']}
-        #     repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
-        #     commits = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
-        #     if commits.length > 0
-        #       repositories_with_recent_commits << repo['name']
-        #       puts "found #{commits.length} commits in #{repo['name']} repo since #{since} "
-        #     end
-        #   end
-        # end
+        expect(user_teams.length).to be < org_teams.length
       end
     end
   end

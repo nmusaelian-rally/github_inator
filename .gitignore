@@ -8,3 +8,6 @@
 /spec/reports/
 /tmp/
 CODE_OF_CONDUCT.*
+.idea/*
+.DS_Store
+spec/configs

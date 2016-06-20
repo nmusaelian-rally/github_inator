@@ -6,13 +6,11 @@ REPO_COMMITS_ENDPOINT = "repos/<org_name>/<repo_name>/commits"
 
 # List teams in organization
 ORGS_TEAMS_ENDPOINT = "orgs/<org_name>/teams"
-
 # List all of the teams across all of the organizations to which the authenticated user belongs.
 USER_TEAMS_ENDPOINT = "user/teams"
-
 TEAM_REPOS_ENDPOINT = "teams/<id>/repos"
-
 SEARCH_REPOS_ENDPOINT = "search/repositories"
+INFLATED_COMMIT_ENDPOINT = "repos/<org_name>/<repo_name>/commits/<sha>"
 
 
 def get_all_results(connector, method, endpoint, options={}, data=nil, extra_headers=nil)
@@ -140,8 +138,15 @@ describe GithubInator do
         @user = "nmusaelian-rally"
         @org_teams_endpoint = ORGS_TEAMS_ENDPOINT.sub('<org_name>', @organization)
       end
+      it "get organization's teams and user's teams" do
+        user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
+        puts "I am a member of #{user_teams.length} team(s)"
+        org_teams = get_all_results(@connector, :get, @org_teams_endpoint).flatten
+        puts "There are #{org_teams.length} teams in #{@organization} organization"
+        expect(user_teams.length).to be < org_teams.length
+      end
       it "search by when organization's repository was last pushed" do
-        days = 1
+        days = 2
         lookback = days * 86400
         now = Time.new.utc
         back = (now - lookback).iso8601
@@ -170,13 +175,11 @@ describe GithubInator do
         criteria = "?q=user:#{@organization}+pushed:>#{back.iso8601}"
         search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
         results = get_all_results(@connector, :get, search_endpoint).flatten
-        puts "number of pages #{results.length}"
         total_count = results.first["total_count"]
         if total_count
           expect(total_count).to eq(results.last["total_count"])
           expect(results.first["items"].length).to be >= results.last["items"].length
           results.each do |page|
-            puts page["items"].length
             page["items"].each do |result|
               #puts "#{result['name']}....#{result['owner']["login"]}"
               expect(result["owner"]["login"]).to eq(@organization)
@@ -191,28 +194,31 @@ describe GithubInator do
             replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name']}
             repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
             commit_results = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
-            #puts "found #{commits.length} commit(s) in #{repo['name']} repo since #{since} "
             commit_results.each do |result|
-              commit = {
-                  'sha'     => result['sha'],
-                  'author'  => result['commit']['author']['name'],
-                  'message' => result['commit']['message']
-              }
-              commits_data << commit
+              replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name'], '<sha>' => result['sha']}
+              inflated_commit_endpoint = INFLATED_COMMIT_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+              inflated_commits = get_all_results(@connector, :get, inflated_commit_endpoint).flatten
+              inflated_commits.each do |inflated_result|
+                commit = {
+                    'sha'     => inflated_result['sha'],
+                    'author'  => inflated_result['commit']['author']['name'],
+                    'message' => inflated_result['commit']['message'],
+                    'files'   => inflated_result['files']
+                }
+                commits_data << commit
+              end
+            end
+            commits_data.each do |commit|
+              expect(commit['files'].length).to be > 0
+              expect(commit['message'].empty?).to be false
+              puts "sha: #{commit['sha']} author: #{commit['author']} message: #{commit['message']}"
+              commit['files'].each do |file|
+                puts file['filename']
+              end
+              puts "-"*60
             end
           end
-          commits_data.each do |commit|
-            puts "sha: #{commit['sha']}...author: #{commit['author']}...message: #{commit['message']}"
-            puts "-"*40
-          end
         end
-      end
-      it "get organization's teams and user's teams" do
-        user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
-        puts "I am a member of #{user_teams.length} team(s)"
-        org_teams = get_all_results(@connector, :get, @org_teams_endpoint).flatten
-        puts "There are #{org_teams.length} teams in #{@organization} organization"
-        expect(user_teams.length).to be < org_teams.length
       end
     end
   end

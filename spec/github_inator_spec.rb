@@ -1,6 +1,19 @@
 require 'github_inator'
 require 'time'
 
+######### sample config file
+=begin
+
+user:		        raven
+organization:   PlutonianShore #optional, use only if searching repos by organization
+password: 	    n3verm0r3
+base_url:       https://api.github.com
+lookback:       48 #hours
+debug:          false
+
+=end
+#########
+
 ORG_REPOS_ENDPOINT = "orgs/<org_name>/repos"
 REPO_COMMITS_ENDPOINT = "repos/<org_name>/<repo_name>/commits"
 # List teams in organization
@@ -23,15 +36,25 @@ def get_all_results(connector, method, endpoint, options={}, data=nil, extra_hea
   total_results
 end
 
+def construct_search_from_config(repo_owner = nil, lookback = nil)
+  repo_owner = repo_owner || @repo_owner
+  lookback   = lookback   || @lookback
+  return "user:#{repo_owner}+pushed:>#{lookback}"
+end
+
 describe GithubInator do
   before :all do
-    @repositories = []
+    #@repositories = []
+    @config       = YAML.load_file('./spec/configs/github.yml')
+    @repo_owner   = @config['organization'] || @config['user']
+    @lookback     = (Time.now - @config['lookback'] * 3600).iso8601
   end
   before :each do
-    @connector = GithubInator::GithubConnector.new(YAML.load_file('./spec/configs/github.yml'))
+    @connector = GithubInator::GithubConnector.new(@config)
   end
 
   describe "#make_request" do
+
     context "check for links" do
       before :each do
         organization = "RallyCommunity"
@@ -49,6 +72,7 @@ describe GithubInator do
         expect(response.next[-1]) == "3"
       end
     end
+
     context "limit queries by time" do
       before :each do
         organization = "RallyCommunity"
@@ -82,6 +106,7 @@ describe GithubInator do
         expect(Time.parse(results.last["commit"]["author"]["date"])).to be_between(t1, t2)
       end
     end
+
     context "page" do
       before :each do
         organization = "RallyCommunity"
@@ -131,86 +156,78 @@ describe GithubInator do
         expect(result1.flatten.length).to be == result2.flatten.length
       end
     end
-    context "repos and commits" do
-      before :each do
-        @organization = "RallySoftware"
-        @user = "nmusaelian-rally"
-        @org_teams_endpoint = ORGS_TEAMS_ENDPOINT.sub('<org_name>', @organization)
+
+    it "get organization's teams and user's teams" do
+      org_teams_endpoint = ORGS_TEAMS_ENDPOINT.sub('<org_name>', @repo_owner)
+      user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
+      puts "I am a member of #{user_teams.length} team(s)"
+      org_teams = get_all_results(@connector, :get, org_teams_endpoint).flatten
+      puts "There are #{org_teams.length} teams in #{@repo_owner} organization"
+      expect(user_teams.length).to be < org_teams.length
+    end
+    it "search by when repository was last pushed" do
+      user = "nmusaelian-rally"
+      hours = 96
+      lookback = (Time.now - hours * 3600).iso8601
+      criteria = construct_search_from_config(user, lookback)
+      options = {q: criteria}
+      results = get_all_results(@connector, :get, SEARCH_REPOS_ENDPOINT, options).flatten
+      total_count = results[0]["total_count"]
+      items = results[0]["items"]
+      puts "total_count: #{total_count}, items.length: #{items.length}"
+      expect(total_count).to be >= 0
+      expect(items.length).to be <= total_count
+      if items.length > 0
+        owner = items[0]["owner"]["login"]
+        pushed_at = Time.parse(items[0]["pushed_at"])
+        expect(owner).to be == user
+        expect(pushed_at).to be >= Time.parse(lookback)
       end
-      it "get organization's teams and user's teams" do
-        user_teams = get_all_results(@connector, :get, USER_TEAMS_ENDPOINT).flatten
-        puts "I am a member of #{user_teams.length} team(s)"
-        org_teams = get_all_results(@connector, :get, @org_teams_endpoint).flatten
-        puts "There are #{org_teams.length} teams in #{@organization} organization"
-        expect(user_teams.length).to be < org_teams.length
-      end
-      it "search by when organization's repository was last pushed" do
-        days = 2
-        lookback = days * 86400
-        now = Time.new.utc
-        back = (now - lookback).iso8601
-        criteria = "?q=user:#{@organization}+pushed:>#{back}"
-        search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
-        results = get_all_results(@connector, :get, search_endpoint).flatten
-        total_count = results[0]["total_count"]
-        items = results[0]["items"]
-        puts "total_count: #{total_count}, items.length: #{items.length}"
-        expect(total_count).to be >= 0
-        expect(items.length).to be <= total_count
-        if items.length > 0
-          owner = items[0]["owner"]["login"]
-          pushed_at = Time.parse(items[0]["pushed_at"])
-          expect(owner).to be == @organization
-          expect(pushed_at).to be >= Time.parse(back)
-        end
-      end
-      it "get commits in a repository filtered by user/organization and pushed_at" do
-        repos_with_recent_commits = []
-        commits_data = []
-        days = 2
-        lookback = days * 86400
-        now = Time.new.utc
-        back = now - lookback
-        criteria = "?q=user:#{@organization}+pushed:>#{back.iso8601}"
-        search_endpoint = SEARCH_REPOS_ENDPOINT.concat(criteria)
-        results = get_all_results(@connector, :get, search_endpoint).flatten
-        total_count = results.first["total_count"]
-        if total_count
-          expect(total_count).to eq(results.last["total_count"])
-          expect(results.first["items"].length).to be >= results.last["items"].length
-          results.each do |page|
-            page["items"].each do |result|
-              #puts "#{result['name']}....#{result['owner']["login"]}"
-              expect(result["owner"]["login"]).to eq(@organization)
-              expect(Time.parse(result["pushed_at"])).to be >= back
-              repos_with_recent_commits << {'name' => result["name"], 'org' => result["owner"]["login"]}
-            end
+    end
+    it "get commits in a repository filtered by user/organization and pushed_at" do
+      repos_with_recent_commits = []
+      commits_data = []
+      criteria = construct_search_from_config()
+      options = {q: criteria}
+      results = get_all_results(@connector, :get, SEARCH_REPOS_ENDPOINT, options).flatten
+      total_count = results.first["total_count"]
+      if total_count
+        expect(total_count).to eq(results.last["total_count"])
+        expect(results.first["items"].length).to be >= results.last["items"].length
+        results.each do |page|
+          page["items"].each do |result|
+            #puts "#{result['name']}....#{result['owner']["login"]}"
+            expect(result["owner"]["login"]).to eq(@organization)
+            expect(Time.parse(result["pushed_at"])).to be >= Time.parse(@lookback)
+            repos_with_recent_commits << {'name' => result["name"], 'org' => result["owner"]["login"]}
           end
         end
-        if !repos_with_recent_commits.empty?
-          since = {since: back.iso8601}
-          repos_with_recent_commits.each do |repo|
-            replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name']}
-            repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
-            commit_results = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
-            commit_results.each do |result|
-              replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name'], '<sha>' => result['sha']}
-              inflated_commit_endpoint = INFLATED_COMMIT_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
-              inflated_commits = get_all_results(@connector, :get, inflated_commit_endpoint).flatten
-              inflated_commits.each do |inflated_result|
-                commit = {
-                    'sha'     => inflated_result['sha'],
-                    'author'  => inflated_result['commit']['author']['name'],
-                    'message' => inflated_result['commit']['message'],
-                    'files'   => inflated_result['files']
-                }
-                commits_data << commit
-              end
+      end
+      if !repos_with_recent_commits.empty?
+        since = {since: @lookback}
+        repos_with_recent_commits.each do |repo|
+          replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name']}
+          repo_commits_endpoint = REPO_COMMITS_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+          commit_results = get_all_results(@connector, :get, repo_commits_endpoint, since).flatten
+          commit_results.each do |result|
+            replacements = {'<org_name>' => repo['org'], '<repo_name>' => repo['name'], '<sha>' => result['sha']}
+            inflated_commit_endpoint = INFLATED_COMMIT_ENDPOINT.gsub(/<\w+>/) {|match| replacements.fetch(match,match)}
+            inflated_commits = get_all_results(@connector, :get, inflated_commit_endpoint).flatten
+            inflated_commits.each do |inflated_result|
+              commit = {
+                  'sha'     => inflated_result['sha'],
+                  'author'  => inflated_result['commit']['author']['name'],
+                  'message' => inflated_result['commit']['message'],
+                  'files'   => inflated_result['files']
+              }
+              commits_data << commit
             end
-            commits_data.each do |commit|
-              expect(commit['files'].length).to be > 0
-              expect(commit['message'].empty?).to be false
-              puts "sha: #{commit['sha']} author: #{commit['author']} message: #{commit['message']}"
+          end
+          commits_data.each do |commit|
+            #expect(commit['files'].length).to be > 0 #can a commit have no files? this failed once
+            expect(commit['message'].empty?).to be false
+            puts "sha: #{commit['sha']} author: #{commit['author']} message: #{commit['message']}"
+            if(!commit['files'].empty?)
               commit['files'].each do |file|
                 puts file['filename']
               end

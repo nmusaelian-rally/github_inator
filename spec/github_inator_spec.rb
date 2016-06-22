@@ -3,7 +3,6 @@ require 'time'
 
 ORG_REPOS_ENDPOINT = "orgs/<org_name>/repos"
 REPO_COMMITS_ENDPOINT = "repos/<org_name>/<repo_name>/commits"
-
 # List teams in organization
 ORGS_TEAMS_ENDPOINT = "orgs/<org_name>/teams"
 # List all of the teams across all of the organizations to which the authenticated user belongs.
@@ -132,7 +131,7 @@ describe GithubInator do
         expect(result1.flatten.length).to be == result2.flatten.length
       end
     end
-    context "teams, repos, commits" do
+    context "repos and commits" do
       before :each do
         @organization = "RallySoftware"
         @user = "nmusaelian-rally"
